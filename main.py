@@ -1,4 +1,5 @@
 print("hello world")
+import socket
 
 def parse_ports(port_str, top_ports=None):
     """Parse a string of ports and return a list of integers. handles ranges(-) and ports (,)
@@ -40,16 +41,54 @@ def tcp_connect_scan(target, port, timeout):
     return result == 0
 
 
+def scan_range_threaded(target, ports, max_threads=100, timeout=1):
+    """multithreading to make the scan faster. use ThreadPoolExecutor to scan ports in parallel."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    results = {}
+    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+        futures = {executor.submit(tcp_connect_scan, target, port, timeout): port for port in ports}
+        for future in as_completed(futures):
+            port = futures[future]
+            try:
+                result = future.result()
+                results[port] = result
+            except Exception as e:
+                print(f"Error scanning port {port}: {e}")
+                results[port] = False
+    return results
 
 
+def get_service_name(port):
+    #does an offline lookup of the expected service name
+    try:
+        return socket.getservbyport(port, 'tcp')
+    except OSError:
+        return "unknown"
+    
+
+def grab_banner(sock, port, timeout):
+    #Grab the banner from a service running on the specified port.
+    sock.settimeout(timeout)
+    banner = None
+    try:
+        if port in [80, 443, 8080]:
+            sock.send(b"HEAD / HTTP/1.0\r\n\r\n")
+            banner = sock.recv(1024).decode()
+        else:
+            banner = sock.recv(1024).decode()
+    except socket.timeout:
+        pass
+    finally:
+        sock.close()
+    return banner
 
 
 
 # main
 if __name__ == "__main__":
-    #test parse_ports function and tcp_connect_scan function against 100.73.129.93
+    #test all functions against 100.73.129.93
     target = "100.73.129.93"
-    ports = parse_ports("22,80,443,8080,1000-1005,8096,2283")
+    ports = parse_ports("22,80,443,8080,1000,8096,2283")
     for port in ports:
         if tcp_connect_scan(target, port, 1):
             print(f"Port {port} is open on {target}")
