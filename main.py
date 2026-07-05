@@ -89,8 +89,17 @@ if __name__ == "__main__":
     #test all functions against 100.73.129.93
     target = "100.73.129.93"
     ports = parse_ports("22,80,443,8080,1000,8096,2283")
-    for port in ports:
-        if tcp_connect_scan(target, port, 1):
-            print(f"Port {port} is open on {target}")
+    results = scan_range_threaded(target, ports, max_threads=10, timeout=1)
+    for port, is_open in results.items():
+        service_name = get_service_name(port)
+        if is_open:
+            print(f"Port {port} is open (Service: {service_name})")
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect((target, port))
+            banner = grab_banner(sock, port, timeout=1)
+            if banner:
+                print(f"Banner for port {port}: {banner}")
+            else:
+                print(f"No banner received for port {port}")
         else:
-            print(f"Port {port} is closed on {target}")
+            print(f"Port {port} is closed (Service: {service_name})")
